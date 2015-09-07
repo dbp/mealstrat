@@ -30,6 +30,13 @@ fieldRead = do s <- field
 data Units = Single | Grams | Ounces | Pounds | Cups | Tablespoons | Teaspoons | CCs deriving (Eq, Show, Read)
 
 
+convertUnits :: Units -> Units -> Double
+convertUnits Tablespoons Teaspoons = 3
+convertUnits Teaspoons Tablespoons = 1/3
+convertUnits Cups Tablespoons = 16
+convertUnits Tablespoons Cups = 1/16
+convertUnits from to = error $ "Don't know how to convert from " <> show from <> " to " <> show to
+
 data Recipe = Recipe { rId             :: Int
                      , rName           :: Text
                      , rBookId         :: Maybe Int
@@ -119,6 +126,12 @@ createIngredients pg rid ingredients =
 
 getRecipes :: Pool Connection -> IO [Recipe]
 getRecipes pg = withResource pg (\con -> query_ con "SELECT id, name, book_id, page_number, instructions, total_time, active_time, number_servings, complexity FROM recipes")
+
+getNRecipesWithComplexityGe :: Pool Connection -> Int -> Int -> IO [Recipe]
+getNRecipesWithComplexityGe pg num comp = withResource pg (\con -> query con "SELECT id, name, book_id, page_number, instructions, total_time, active_time, number_servings, complexity FROM recipes WHERE complexity >= ? ORDER BY random() LIMIT ?" (comp, num))
+
+getRecipeWithComplexityLe :: Pool Connection -> Int -> IO (Maybe Recipe)
+getRecipeWithComplexityLe pg comp = withResource pg (\con -> listToMaybe <$> query con "SELECT id, name, book_id, page_number, instructions, total_time, active_time, number_servings, complexity FROM recipes WHERE complexity <= ? ORDER BY random() LIMIT 1" (Only comp))
 
 getRecipe :: Pool Connection -> Int -> IO (Maybe Recipe)
 getRecipe pg i = withResource pg (\con -> listToMaybe <$> query con "SELECT id, name, book_id, page_number, instructions, total_time, active_time, number_servings, complexity FROM recipes WHERE id = ?" (Only i))
