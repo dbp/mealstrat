@@ -16,9 +16,20 @@ cabal-version:       >=1.10
 executable mealstrat
   hs-source-dirs:      src
   main-is:             Main.hs
+  other-modules:       Lib
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base
+                     , text
+                     , time
+                     , mtl
                      , scotty
+                     , blaze-html
+                     , postgresql-simple
+                     , resource-pool
+                     , parsec
+                     , digestive-functors
+                     , digestive-functors-scotty
+                     , digestive-functors-blaze
   default-language:    Haskell2010
 
 source-repository head
