@@ -19,6 +19,7 @@ import           Text.Digestive                       hiding (string, choice)
 import           Text.Parsec                          hiding (Error)
 import           Text.Read (readMaybe)
 import Data.Traversable
+import Data.Maybe
 
 fieldRead :: Read a => RowParser a
 fieldRead = do s <- field
@@ -119,8 +120,15 @@ createIngredients pg rid ingredients =
 getRecipes :: Pool Connection -> IO [Recipe]
 getRecipes pg = withResource pg (\con -> query_ con "SELECT id, name, book_id, page_number, instructions, total_time, active_time, number_servings, complexity FROM recipes")
 
+getRecipe :: Pool Connection -> Int -> IO (Maybe Recipe)
+getRecipe pg i = withResource pg (\con -> listToMaybe <$> query con "SELECT id, name, book_id, page_number, instructions, total_time, active_time, number_servings, complexity FROM recipes WHERE id = ?" (Only i))
+
 getBooks :: Pool Connection -> IO [Book]
 getBooks pg = withResource pg (\con -> query_ con "SELECT id, title, author, year FROM books")
+
+getRecipeIngredients :: Pool Connection -> Recipe -> IO [(Ingredient, RecipeIngredient)]
+getRecipeIngredients pg recipe = withResource pg (\con -> do res <- query con "SELECT I.id, I.name, I.grams_per_cc, R.recipe_id, R.ingredient_id, R.units, R.quantity, R.original_text FROM ingredients AS I JOIN recipe_ingredients as R on R.ingredient_id = I.id WHERE R.recipe_id = ?" (Only (rId recipe))
+                                                             return $ map (\(i :. ri) -> (i, ri)) res)
 
 newRecipe :: Pool Connection -> Recipe -> IO (Maybe Recipe)
 newRecipe pg r@Recipe{..} = withResource pg (\con -> do res <- query con "INSERT INTO recipes (name, book_id, page_number, instructions, total_time, active_time, number_servings, complexity) VALUES (?,?,?,?,?,?,?,?) RETURNING id" (rName, rBookId, rPageNumber, rInstructions, rTotalTime, rActiveTime, rNumberServings, rComplexity)

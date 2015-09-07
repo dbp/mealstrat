@@ -103,7 +103,7 @@ main = do port <- envDef "PORT" 3000
                get "/recipes" $
                  do recipes <- liftIO (getRecipes pg)
                     blaze $ do p $ a ! href "/recipes/new" $ "New Recipe"
-                               ul $ mapM_ (\r -> li (H.text $ rName r)) recipes
+                               ul $ mapM_ (\r -> li (a ! href (H.textValue $ "/recipes/" <> tshow (rId r)) $ H.text $ rName r)) recipes
                matchAny "/recipes/new" $
                  do books <- liftIO (getBooks pg)
                     (view, result) <- runForm "recipe" (recipeForm books)
@@ -115,5 +115,11 @@ main = do port <- envDef "PORT" 3000
                                                        redirect "/recipes"
                       Nothing -> blaze $ do recipeView "/recipes/new" view
                get "/recipes/:id" $
-                 do -- i <- S.param "id"
-                    undefined
+                 do i <- S.param "id"
+                    mr <- liftIO $ getRecipe pg i
+                    case mr of
+                      Nothing -> next
+                      Just recipe -> do ingredients <- liftIO $ getRecipeIngredients pg recipe
+                                        blaze $ do p $ a ! href "/recipes" $ "All Recipes"
+                                                   p (H.text (rName recipe))
+                                                   ul $ mapM_ (\(i, ri) -> li (H.text (tshow (riQuantity ri) <> " " <> tshow (riUnits ri) <> " " <> iName i))) ingredients
