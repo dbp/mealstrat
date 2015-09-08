@@ -103,24 +103,28 @@ main = do port <- envDef "PORT" 3000
                post "/" $
                  do let singleDays = 1
                     let doubleDays = 1
-                    rs' <- liftIO $ getNRecipesWithComplexityGe pg (singleDays + (doubleDays * 2)) 3
-                    rs <- liftIO $ mapM (\r -> (r, ) <$> getRecipeIngredients pg r) rs'
-                    meals <- mapM (\main -> if rComplexity (fst main) < 5
+                    rs <- liftIO $ getNRecipesWithComplexityGe pg (singleDays + (doubleDays * 2)) 3
+                    meals <- mapM (\main -> if rComplexity main < 5
                                                then do Just side <- liftIO $ getRecipeWithComplexityLe pg 2
-                                                       ingredients <- liftIO $ getRecipeIngredients pg side
-                                                       return [main, (side, ingredients)]
+                                                       return [main, side]
                                                else return [main])
                                   rs
-                    let singleMeals = take singleDays meals
+                    let singleMeals = Prelude.map (:[]) $ take singleDays meals
                     let doubleMeals = foldUp (drop singleDays meals)
-                    blaze $ do h2 "Single"
-                               mapM_ (\m -> formatMeal (Prelude.map fst m) >> formatIngredients (combineIngredients m) >> hr) singleMeals
-                               h2 "Double"
-                               mapM_ (\(m1, m2) -> do formatMeal (Prelude.map fst m1)
-                                                      formatMeal (Prelude.map fst m2)
-                                                      formatIngredients (combineIngredients $ m1 ++ m2)
-                                                      hr)
-                                     doubleMeals
+                    redirect $ constructPlanUrl (singleMeals ++ doubleMeals)
+               get "/plan" $
+                 do ps <- getPlans
+                    recipes <- liftIO $ mapM (\day ->
+                                                mapM (\meal ->
+                                                        mapM (\ri -> do Just r <- getRecipe pg ri
+                                                                        is <- getRecipeIngredients pg r
+                                                                        return (r, is))
+                                                             meal)
+                                                     day)
+                                             ps
+                    blaze $ mapM_ (\day -> do mapM_ (\meal -> formatMeal (Prelude.map fst meal)) day
+                                              formatIngredients (combineIngredients (concat day)))
+                                  recipes
                get "/recipes" $
                  do recipes <- liftIO (getRecipes pg)
                     blaze $ do p $ a ! href "/recipes/new" $ "New Recipe"
@@ -144,13 +148,30 @@ main = do port <- envDef "PORT" 3000
                                         blaze $ do p $ a ! href "/recipes" $ "All Recipes"
                                                    p (H.text (rName recipe))
                                                    formatIngredients ingredients
-  where formatIngredients = ul . mapM_ (\(i, ri) -> li (H.text (tshow (riQuantity ri) <> " " <> tshow (riUnits ri) <> " " <> iName i)))
+  where constructPlanUrl plans = TL.fromStrict $
+          "/plan?" <> (T.intercalate "&" $ Prelude.map format $ concat . concat $ Prelude.map ((Prelude.map ununTuple) .unTuple) $
+            zip [0..] (Prelude.map (zip [0..] . Prelude.map (zip [0..])) plans))
+          where unTuple (a,bs) = Prelude.map (a,) bs
+                ununTuple (a,(b,cs)) = Prelude.map (\(c,d) -> (a,b,c,d)) cs
+                format (a,b,c,d) = "r[" <> tshow a <> "][" <> tshow b <> "][" <> tshow c <> "]=" <> tshow (rId d)
+        getPlans = getPlans' [] [] [] 0 0 0
+        getPlans' plans day meal p d m =
+          (do let k = TL.fromStrict $ "r[" <> tshow p <> "][" <> tshow d <> "][" <> tshow m <> "]"
+              cur <- S.param k
+              getPlans' plans day (cur : meal) p d (m+1))
+          `rescue` (\_ -> if m /= 0
+                             then getPlans' plans (meal : day) [] p (d+1) 0
+                             else if d /= 0
+                                     then getPlans' (day : plans) [] [] (p+1) 0 0
+                                     else return plans
+                             )
+        formatIngredients = ul . mapM_ (\(i, ri) -> li (H.text (tshow (riQuantity ri) <> " " <> tshow (riUnits ri) <> " " <> iName i)))
         formatMeal dishes =
           H.div ! class_ "meal" ! A.style "border: 1px solid #dedede; padding: 10px; margin: 20px; display: inline-block; vertical-align: top" $
             do mapM_ (\recipe -> p $ do H.text (rName recipe))
                      dishes
         foldUp [] = []
-        foldUp (x:y:rest) = (x,y) : foldUp rest
+        foldUp (x:y:rest) = [x,y] : foldUp rest
         combineIngredients :: [(Recipe, [(Ingredient, RecipeIngredient)])] -> [(Ingredient, RecipeIngredient)]
         combineIngredients rs =
           let ingredients = concat $ Prelude.map snd rs in
