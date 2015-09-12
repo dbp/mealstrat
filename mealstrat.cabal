@@ -30,6 +30,7 @@ executable mealstrat
                      , digestive-functors
                      , digestive-functors-scotty
                      , digestive-functors-blaze
+                     , HPDF
   default-language:    Haskell2010
 
 source-repository head

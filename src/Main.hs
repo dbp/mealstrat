@@ -1,17 +1,22 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TupleSections     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TupleSections         #-}
 
 module Main where
 
 import           Control.Monad.Trans
 import           Data.Function
 import           Data.List                     (nubBy)
+import           Data.Maybe
 import           Data.Monoid                   ((<>))
 import           Data.Pool
 import           Data.Text                     (Text)
 import qualified Data.Text                     as T
 import qualified Data.Text.Lazy                as TL
 import           Database.PostgreSQL.Simple
+import           Graphics.PDF
+import           Graphics.PDF.Typesetting
 import           System.Environment
 import           Text.Blaze.Html.Renderer.Text
 import           Text.Blaze.Html5              hiding (main)
@@ -26,6 +31,35 @@ import           Web.Scotty
 import qualified Web.Scotty                    as S
 
 import           Lib
+
+-- PDF NONSENSE
+
+data MyVertStyles = NormalPara
+                  | CirclePara !PDFFloat
+
+data MyParaStyles = Normal
+                  | Bold
+
+instance ComparableStyle MyParaStyles where
+  isSameStyleAs Normal Normal = True
+  isSameStyleAs Bold Bold = True
+  isSameStyleAs _ _ = False
+
+instance Style MyParaStyles where
+    textStyle Normal = TextStyle (PDFFont Times_Roman 7) black black FillText 1.0 1.0 1.0 1.0
+    textStyle Bold = TextStyle (PDFFont Times_Bold 8) black black FillText 1.0 1.0 1.0 1.0
+
+    sentenceStyle _ = Nothing
+    wordStyle _ = Nothing
+
+instance ParagraphStyle MyVertStyles MyParaStyles where
+    lineWidth _ w _ = w
+
+instance ComparableStyle MyVertStyles where
+    isSameStyleAs NormalPara NormalPara = True
+    isSameStyleAs _ _ = False
+
+-- END PDF NONSENSE
 
 blaze :: Html -> ActionM ()
 blaze = Web.Scotty.html . renderHtml
@@ -68,9 +102,10 @@ recipeView action v = D.form v action $ do D.childErrorList "" v
                                            D.label "page_number" v "Page Number"
                                            D.inputText "page_number" v
                                            br
-                                           D.label "instructions" v "Instructions"
-                                           D.inputTextArea (Just 20) (Just 50) "instructions" v
-                                           br
+                                           D.inputHidden "instructions" v
+                                           -- D.label "instructions" v "Instructions"
+                                           -- D.inputTextArea (Just 20) (Just 50) "instructions" v
+                                           -- br
                                            D.label "ingredients" v "Ingredients"
                                            D.inputTextArea (Just 20) (Just 50) "ingredients" v
                                            br
@@ -101,17 +136,20 @@ main = do port <- envDef "PORT" 3000
                  do blaze $ do p $ a ! href "/recipes" $ "All Recipes"
                                H.form ! method "POST" $ do button "Get Meal Plan"
                post "/" $
-                 do let singleDays = 1
-                    let doubleDays = 1
-                    rs <- liftIO $ getNRecipesWithComplexityGe pg (singleDays + (doubleDays * 2)) 3
+                 do -- current numbers amount to 16 full meals
+                    let singleDays = 4
+                    let doubleDays = 0
+                    let tripleDays = 4
+                    rs <- liftIO $ getNRecipesWithComplexityGe pg (singleDays + (doubleDays * 2) + (tripleDays * 3)) 3
                     meals <- mapM (\main -> if rComplexity main < 5
                                                then do Just side <- liftIO $ getRecipeWithComplexityLe pg 2
                                                        return [main, side]
                                                else return [main])
                                   rs
                     let singleMeals = Prelude.map (:[]) $ take singleDays meals
-                    let doubleMeals = foldUp (drop singleDays meals)
-                    redirect $ constructPlanUrl (singleMeals ++ doubleMeals)
+                    let doubleMeals = foldUp (take (doubleDays * 2) $ drop singleDays meals)
+                    let tripleMeals = foldUp3 (drop (singleDays + (doubleDays * 2)) meals)
+                    redirect $ constructPlanUrl (singleMeals <> doubleMeals <> tripleMeals)
                get "/plan" $
                  do ps <- getPlans
                     recipes <- liftIO $ mapM (\day ->
@@ -122,9 +160,33 @@ main = do port <- envDef "PORT" 3000
                                                              meal)
                                                      day)
                                              ps
-                    blaze $ mapM_ (\day -> do mapM_ (\meal -> formatMeal (Prelude.map fst meal)) day
-                                              formatIngredients (combineIngredients (concat day)))
-                                  recipes
+                    let shapes = repeat [Rectangle (5   :+ 205) (295 :+ 395)
+                                        ,Rectangle (305 :+ 205) (595 :+ 395)
+                                        ,Rectangle (5   :+ 5)   (295 :+ 195)
+                                        ,Rectangle (305 :+ 5)   (595 :+ 195)]
+                    let pages = zipWith zip (foldUp4 recipes) shapes
+                    let rect = PDFRect 0 0 600 400
+                    -- NOTE(dbp 2015-09-11): This is the most terribly
+                    -- undocumented library I've _ever_ encountered. I
+                    -- can't even imagine how stupid you could
+                    -- possibly be to release something like this...
+                    -- What I've figured out the arguments to rectangle are:
+                    -- Rectangle (bottom left X :+ bottom left Y) (top right X :+ top right Y)
+                    liftIO $ runPdf "/tmp/mealstrat.pdf" standardDocInfo rect $ do
+                      mapM_ (\p -> do page <- addPage Nothing
+                                      drawWithPage page $ mapM_ (\(day :: [[(Recipe, [(Ingredient, RecipeIngredient)])]], rect) ->
+                                                   displayFormattedText rect NormalPara Normal $
+                                                     do paragraph $ do mapM_ (\meal -> do formatMeal (Prelude.map fst meal)
+                                                                                          forceNewLine
+                                                                                          txt "----"
+                                                                                          forceNewLine) day
+                                                                  ) p) pages
+
+                    {-blaze $ mapM_ (\day -> do mapM_ (\meal -> formatMeal (Prelude.map fst meal)) day
+                                                  formatIngredients (combineIngredients (concat day)))
+                                      recipes -}
+                    setHeader "Content-Type" "application/pdf"
+                    S.file "/tmp/mealstrat.pdf"
                get "/recipes" $
                  do recipes <- liftIO (getRecipes pg)
                     blaze $ do p $ a ! href "/recipes/new" $ "New Recipe"
@@ -138,7 +200,8 @@ main = do port <- envDef "PORT" 3000
                                                          Just r -> liftIO $ createIngredients pg (rId r) ingredients
                                                          Nothing -> error "Couldn't create recipe."
                                                        redirect "/recipes"
-                      Nothing -> blaze $ do recipeView "/recipes/new" view
+                      Nothing -> blaze $ do H.style ! type_ "text/css" $ "input { width: 80%; display: inline-block; font-size: 15pt; } textarea { width: 80%; display: inline-block; font-size: 15pt } label { width: 20%; font-size: 15pt; display: inline-block; } select { font-size: 15pt } "
+                                            recipeView "/recipes/new" view
                get "/recipes/:id" $
                  do i <- S.param "id"
                     mr <- liftIO $ getRecipe pg i
@@ -166,21 +229,26 @@ main = do port <- envDef "PORT" 3000
                                      else return plans
                              )
         formatIngredients = ul . mapM_ (\(i, ri) -> li (H.text (tshow (riQuantity ri) <> " " <> tshow (riUnits ri) <> " " <> iName i)))
-        formatMeal dishes =
-          H.div ! class_ "meal" ! A.style "border: 1px solid #dedede; padding: 10px; margin: 20px; display: inline-block; vertical-align: top" $
-            do mapM_ (\recipe -> p $ do H.text (rName recipe))
-                     dishes
+        formatMeal (dishes :: [Recipe]) = mapM_ (\recipe -> do txt (T.unpack $ rName recipe)
+                                                               forceNewLine) dishes
+         -- H.div ! class_ "meal" ! A.style "border: 1px solid #dedede; padding: 10px; margin: 20px; display: inline-block; vertical-align: top" $
+         --   do mapM_ (\recipe -> p $ do H.text (rName recipe))
+         --            dishes
         foldUp [] = []
         foldUp (x:y:rest) = [x,y] : foldUp rest
+        foldUp3 [] = []
+        foldUp3 (x:y:z:rest) = [x,y,z] : foldUp3 rest
+        foldUp4 [] = []
+        foldUp4 (x:y:z:t:rest) = [x,y,z,t] : foldUp4 rest
         combineIngredients :: [(Recipe, [(Ingredient, RecipeIngredient)])] -> [(Ingredient, RecipeIngredient)]
         combineIngredients rs =
           let ingredients = concat $ Prelude.map snd rs in
-          let unique = nubBy ((==) `on` (iId . fst)) ingredients in
+          let unique = nubBy (\a b -> (iId $ fst a) == (iId $ fst b) && convertable (riUnits (snd a)) (riUnits (snd b))) ingredients in
           Prelude.map (\i ->
                  let others = filter ((== iId (fst i)) . iId . fst) ingredients in
                  let same_units = filter ((== (riUnits (snd i))) . riUnits . snd) others in
                  let diff_units = filter ((/= (riUnits (snd i))) . riUnits . snd) others in
                  let same_count = sum (Prelude.map (riQuantity . snd) same_units) in
-                 let diff_count = sum (Prelude.map (\o -> convertUnits (riUnits (snd o)) (riUnits (snd i)) * (riQuantity (snd o))) diff_units)
+                 let diff_count = sum (Prelude.map (\o -> (fromMaybe 0 $ convertUnits (riUnits (snd o)) (riUnits (snd i))) * (riQuantity (snd o))) diff_units)
                  in (fst i, (snd i) { riQuantity = same_count + diff_count } )
               ) unique

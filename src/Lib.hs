@@ -3,6 +3,7 @@
 
 module Lib where
 
+import Data.Maybe
 import Data.Functor.Identity
 import           Control.Applicative                  hiding ((<|>))
 import           Data.Monoid
@@ -29,13 +30,15 @@ fieldRead = do s <- field
 
 data Units = Single | Grams | Ounces | Pounds | Cups | Tablespoons | Teaspoons | CCs deriving (Eq, Show, Read)
 
+convertable :: Units -> Units -> Bool
+convertable from to = isJust (convertUnits from to)
 
-convertUnits :: Units -> Units -> Double
-convertUnits Tablespoons Teaspoons = 3
-convertUnits Teaspoons Tablespoons = 1/3
-convertUnits Cups Tablespoons = 16
-convertUnits Tablespoons Cups = 1/16
-convertUnits from to = error $ "Don't know how to convert from " <> show from <> " to " <> show to
+convertUnits :: Units -> Units -> Maybe Double
+convertUnits Tablespoons Teaspoons = Just 3
+convertUnits Teaspoons Tablespoons = Just (1/3)
+convertUnits Cups Tablespoons = Just 16
+convertUnits Tablespoons Cups = Just (1/16)
+convertUnits from to = Nothing
 
 data Recipe = Recipe { rId             :: Int
                      , rName           :: Text
