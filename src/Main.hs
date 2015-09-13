@@ -7,9 +7,10 @@ module Main where
 
 import           Control.Monad.Trans
 import           Data.Function
-import           Data.List                     (nubBy)
+import           Data.List                     (nubBy, sortBy)
 import           Data.Maybe
 import           Data.Monoid                   ((<>))
+import           Data.Ord                      (comparing)
 import           Data.Pool
 import           Data.Text                     (Text)
 import qualified Data.Text                     as T
@@ -46,14 +47,15 @@ instance ComparableStyle MyParaStyles where
   isSameStyleAs _ _ = False
 
 instance Style MyParaStyles where
-    textStyle Normal = TextStyle (PDFFont Times_Roman 7) black black FillText 1.0 1.0 1.0 1.0
-    textStyle Bold = TextStyle (PDFFont Times_Bold 8) black black FillText 1.0 1.0 1.0 1.0
+    textStyle Normal = TextStyle (PDFFont Times_Roman 4) black black FillText 1.0 1.0 1.0 1.0
+    textStyle Bold = TextStyle (PDFFont Times_Bold 6) black black FillText 1.0 1.0 1.0 1.0
 
     sentenceStyle _ = Nothing
     wordStyle _ = Nothing
 
 instance ParagraphStyle MyVertStyles MyParaStyles where
     lineWidth _ w _ = w
+    interline _ = Just $ \_ -> return ()
 
 instance ComparableStyle MyVertStyles where
     isSameStyleAs NormalPara NormalPara = True
@@ -134,12 +136,18 @@ main = do port <- envDef "PORT" 3000
           scotty port $
             do get "/" $
                  do blaze $ do p $ a ! href "/recipes" $ "All Recipes"
-                               H.form ! method "POST" $ do button "Get Meal Plan"
+                               H.form ! method "POST" $ do H.label ! for "single" $ "Single"
+                                                           H.input ! name "single" ! value "4"
+                                                           H.label ! for "double" $ "Double"
+                                                           H.input ! name "double" ! value "0"
+                                                           H.label ! for "triple" $ "Triple"
+                                                           H.input ! name "triple" ! value "4"
+                                                           button "Get Meal Plan"
                post "/" $
                  do -- current numbers amount to 16 full meals
-                    let singleDays = 4
-                    let doubleDays = 0
-                    let tripleDays = 4
+                    singleDays <- S.param "single"
+                    doubleDays <- S.param "double"
+                    tripleDays <- S.param "triple"
                     rs <- liftIO $ getNRecipesWithComplexityGe pg (singleDays + (doubleDays * 2) + (tripleDays * 3)) 3
                     meals <- mapM (\main -> if rComplexity main < 5
                                                then do Just side <- liftIO $ getRecipeWithComplexityLe pg 2
@@ -155,42 +163,20 @@ main = do port <- envDef "PORT" 3000
                     recipes <- liftIO $ mapM (\day ->
                                                 mapM (\meal ->
                                                         mapM (\ri -> do Just r <- getRecipe pg ri
+                                                                        b <- maybe (return Nothing) (getBookById pg) (rBookId r)
                                                                         is <- getRecipeIngredients pg r
-                                                                        return (r, is))
+                                                                        return ((r, b), is))
                                                              meal)
-                                                     day)
-                                             ps
-                    let shapes = repeat [Rectangle (5   :+ 205) (295 :+ 395)
-                                        ,Rectangle (305 :+ 205) (595 :+ 395)
-                                        ,Rectangle (5   :+ 5)   (295 :+ 195)
-                                        ,Rectangle (305 :+ 5)   (595 :+ 195)]
-                    let pages = zipWith zip (foldUp4 recipes) shapes
-                    let rect = PDFRect 0 0 600 400
-                    -- NOTE(dbp 2015-09-11): This is the most terribly
-                    -- undocumented library I've _ever_ encountered. I
-                    -- can't even imagine how stupid you could
-                    -- possibly be to release something like this...
-                    -- What I've figured out the arguments to rectangle are:
-                    -- Rectangle (bottom left X :+ bottom left Y) (top right X :+ top right Y)
-                    liftIO $ runPdf "/tmp/mealstrat.pdf" standardDocInfo rect $ do
-                      mapM_ (\p -> do page <- addPage Nothing
-                                      drawWithPage page $ mapM_ (\(day :: [[(Recipe, [(Ingredient, RecipeIngredient)])]], rect) ->
-                                                   displayFormattedText rect NormalPara Normal $
-                                                     do paragraph $ do mapM_ (\meal -> do formatMeal (Prelude.map fst meal)
-                                                                                          forceNewLine
-                                                                                          txt "----"
-                                                                                          forceNewLine) day
-                                                                  ) p) pages
-
-                    {-blaze $ mapM_ (\day -> do mapM_ (\meal -> formatMeal (Prelude.map fst meal)) day
-                                                  formatIngredients (combineIngredients (concat day)))
-                                      recipes -}
-                    setHeader "Content-Type" "application/pdf"
-                    S.file "/tmp/mealstrat.pdf"
+                                                     day) ps
+                    blaze $ do H.style ! type_ "text/css" $ "@page {size: auto; margin: 25mm;} body { width: 8.75in; font-size: 9pt; margin: 0; } h4 { margin: 0; float: left; padding: 5px; margin: 5px; color: #fff; background-color: #000; border-radius: 10px; } p { margin: 5px; } .plan { width: 49%; height: 5.45in; display: inline-block; vertical-align: top; border: 1px solid #000; padding: 0.1in 0; } .meals { width: 30%; float: right;  } .meal { transform: rotate(270deg); width: 1.6in; height: 1.6in; padding: 5px; margin: 5px 0;}  .ingredients { margin: 0; padding: 5px; padding-left: 10px; width: 65%; float: right; list-style-type: none; font-size: 0.85em; } li { display: inline; float: left; width: 50%; line-height: 1.6em; } "
+                               mapM_ (\day -> H.div ! class_ "plan" $ do formatIngredients (combineIngredients (concat day))
+                                                                         H.div ! class_ "meals" $ mapM_ (\(n, meal) -> formatMeal n (Prelude.map fst meal)) (reverse $ zip [1..] day)
+                                                                         )
+                                     recipes
                get "/recipes" $
-                 do recipes <- liftIO (getRecipes pg)
-                    blaze $ do p $ a ! href "/recipes/new" $ "New Recipe"
-                               ul $ mapM_ (\r -> li (a ! href (H.textValue $ "/recipes/" <> tshow (rId r)) $ H.text $ rName r)) recipes
+                  do recipes <- liftIO (getRecipes pg)
+                     blaze $ do p $ a ! href "/recipes/new" $ "New Recipe"
+                                ul $ mapM_ (\r -> li (a ! href (H.textValue $ "/recipes/" <> tshow (rId r)) $ H.text $ rName r)) recipes
                matchAny "/recipes/new" $
                  do books <- liftIO (getBooks pg)
                     (view, result) <- runForm "recipe" (recipeForm books)
@@ -228,19 +214,22 @@ main = do port <- envDef "PORT" 3000
                                      then getPlans' (day : plans) [] [] (p+1) 0 0
                                      else return plans
                              )
-        formatIngredients = ul . mapM_ (\(i, ri) -> li (H.text (tshow (riQuantity ri) <> " " <> tshow (riUnits ri) <> " " <> iName i)))
-        formatMeal (dishes :: [Recipe]) = mapM_ (\recipe -> do txt (T.unpack $ rName recipe)
-                                                               forceNewLine) dishes
-         -- H.div ! class_ "meal" ! A.style "border: 1px solid #dedede; padding: 10px; margin: 20px; display: inline-block; vertical-align: top" $
-         --   do mapM_ (\recipe -> p $ do H.text (rName recipe))
-         --            dishes
+        formatIngredients = (ul ! class_ "ingredients") . mapM_ (\(i, ri) -> li (H.text ((drop0 $ T.pack $ take 3 $ show (riQuantity ri)) <> formatUnits (riUnits ri) <> " " <> iName i)))
+          where drop0 s = fromMaybe s $ T.stripSuffix ".0" s
+        formatMeal n (dishes :: [(Recipe, Maybe Book)]) =
+           H.div ! class_ "meal" $
+            do h4 (H.text (tshow n))
+               mapM_ (\(recipe, mbook) ->
+                        p $ do H.text (rName recipe)
+                               maybe (return ()) (\b -> H.text (" (" <> bShort b <> ", p" <> tshow (fromJust (rPageNumber recipe)) <> ")")) mbook)
+                     (reverse $ sortBy (comparing (rComplexity.fst)) dishes)
         foldUp [] = []
         foldUp (x:y:rest) = [x,y] : foldUp rest
         foldUp3 [] = []
         foldUp3 (x:y:z:rest) = [x,y,z] : foldUp3 rest
         foldUp4 [] = []
         foldUp4 (x:y:z:t:rest) = [x,y,z,t] : foldUp4 rest
-        combineIngredients :: [(Recipe, [(Ingredient, RecipeIngredient)])] -> [(Ingredient, RecipeIngredient)]
+        combineIngredients :: [((Recipe, Maybe Book), [(Ingredient, RecipeIngredient)])] -> [(Ingredient, RecipeIngredient)]
         combineIngredients rs =
           let ingredients = concat $ Prelude.map snd rs in
           let unique = nubBy (\a b -> (iId $ fst a) == (iId $ fst b) && convertable (riUnits (snd a)) (riUnits (snd b))) ingredients in

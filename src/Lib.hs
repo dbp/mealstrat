@@ -30,6 +30,16 @@ fieldRead = do s <- field
 
 data Units = Single | Grams | Ounces | Pounds | Cups | Tablespoons | Teaspoons | CCs deriving (Eq, Show, Read)
 
+formatUnits :: Units -> Text
+formatUnits Single = ""
+formatUnits Grams = "gm"
+formatUnits Ounces = "oz"
+formatUnits Pounds = "lb"
+formatUnits Cups = " cups"
+formatUnits Tablespoons = " Tbsp"
+formatUnits Teaspoons = " tsp"
+formatUnits CCs = "cc"
+
 convertable :: Units -> Units -> Bool
 convertable from to = isJust (convertUnits from to)
 
@@ -77,13 +87,14 @@ instance FromRow RecipeIngredient where
 
 data Book = Book { bId     :: Int
                  , bTitle  :: Text
+                 , bShort  :: Text
                  , bAuthor :: Text
                  , bYear   :: Int
                  } deriving (Eq, Show)
 
 instance FromRow Book where
   fromRow = Book <$> field <*> field <*> field
-                 <*> field
+                 <*> field <*> field
 
 parseResult :: Stream s Identity t => Parsec s () a -> s -> Result Html a
 parseResult parser input = case parse parser "" input of
@@ -140,7 +151,10 @@ getRecipe :: Pool Connection -> Int -> IO (Maybe Recipe)
 getRecipe pg i = withResource pg (\con -> listToMaybe <$> query con "SELECT id, name, book_id, page_number, instructions, total_time, active_time, number_servings, complexity FROM recipes WHERE id = ?" (Only i))
 
 getBooks :: Pool Connection -> IO [Book]
-getBooks pg = withResource pg (\con -> query_ con "SELECT id, title, author, year FROM books")
+getBooks pg = withResource pg (\con -> query_ con "SELECT id, title, short, author, year FROM books")
+
+getBookById :: Pool Connection -> Int -> IO (Maybe Book)
+getBookById pg i = withResource pg (\con -> listToMaybe <$> query con "SELECT id, title, short, author, year FROM books WHERE id = ?" (Only i))
 
 getRecipeIngredients :: Pool Connection -> Recipe -> IO [(Ingredient, RecipeIngredient)]
 getRecipeIngredients pg recipe = withResource pg (\con -> do res <- query con "SELECT I.id, I.name, I.grams_per_cc, R.recipe_id, R.ingredient_id, R.units, R.quantity, R.original_text FROM ingredients AS I JOIN recipe_ingredients as R on R.ingredient_id = I.id WHERE R.recipe_id = ?" (Only (rId recipe))

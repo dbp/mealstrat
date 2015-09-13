@@ -1,6 +1,7 @@
 CREATE TABLE books (
     id serial PRIMARY KEY,
     title text NOT NULL,
+    short text NOT NULL,
     author text NOT NULL,
     year integer NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now()
