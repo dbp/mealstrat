@@ -33,36 +33,6 @@ import qualified Web.Scotty                    as S
 
 import           Lib
 
--- PDF NONSENSE
-
-data MyVertStyles = NormalPara
-                  | CirclePara !PDFFloat
-
-data MyParaStyles = Normal
-                  | Bold
-
-instance ComparableStyle MyParaStyles where
-  isSameStyleAs Normal Normal = True
-  isSameStyleAs Bold Bold = True
-  isSameStyleAs _ _ = False
-
-instance Style MyParaStyles where
-    textStyle Normal = TextStyle (PDFFont Times_Roman 4) black black FillText 1.0 1.0 1.0 1.0
-    textStyle Bold = TextStyle (PDFFont Times_Bold 6) black black FillText 1.0 1.0 1.0 1.0
-
-    sentenceStyle _ = Nothing
-    wordStyle _ = Nothing
-
-instance ParagraphStyle MyVertStyles MyParaStyles where
-    lineWidth _ w _ = w
-    interline _ = Just $ \_ -> return ()
-
-instance ComparableStyle MyVertStyles where
-    isSameStyleAs NormalPara NormalPara = True
-    isSameStyleAs _ _ = False
-
--- END PDF NONSENSE
-
 blaze :: Html -> ActionM ()
 blaze = Web.Scotty.html . renderHtml
 
