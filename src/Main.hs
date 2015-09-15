@@ -143,7 +143,8 @@ main = do port <- envDef "PORT" 3000
                                                      day) ps
                     blaze $ do H.link ! rel "stylesheet" ! href "/static/main.css"
                                mapM_ (\day -> H.div ! class_ "plan" $ do formatIngredients (combineIngredients (concat day))
-                                                                         H.div ! class_ "meals" $ mapM_ (\(n, meal) -> formatMeal n (Prelude.map fst meal)) (reverse $ zip [1..] day)
+                                                                         H.div ! class_ "meals" $ mapM_ (\(n, meal) ->
+                                                                           formatMeal n (Prelude.map fst meal)) (reverse $ zip [1..] day)
                                                                          )
                                      recipes
                get "/recipes" $
@@ -194,7 +195,9 @@ main = do port <- envDef "PORT" 3000
             do h4 (H.text (tshow n))
                mapM_ (\(recipe, mbook) ->
                         p $ do H.text (rName recipe)
-                               maybe (return ()) (\b -> H.text (" (" <> bShort b <> ", p" <> tshow (fromJust (rPageNumber recipe)) <> ")")) mbook)
+                               H.text $ "; serves " <> tshow (rNumberServings recipe)
+                               H.text $ "; " <> tshow (floor $ 1/60 * (realToFrac $ rTotalTime recipe)) <> "mins"
+                               maybe (return ()) (\b -> H.text ("; " <> bShort b <> ", p" <> tshow (fromJust (rPageNumber recipe)))) mbook)
                      (reverse $ sortBy (comparing (rComplexity.fst)) dishes)
         foldUp [] = []
         foldUp (x:y:rest) = [x,y] : foldUp rest
