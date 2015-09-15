@@ -3,7 +3,7 @@
   "volumes": [],
   "authentication": {
     "bucket": "creds.dbp.io",
-    "key": "dockercfg"
+    "key": "dockercfg_mealstrat"
   },
   "containerDefinitions": [
     {
