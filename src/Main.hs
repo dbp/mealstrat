@@ -63,37 +63,38 @@ recipeForm books =
       <*> "ingredients" .: validate parseIngredients (D.text Nothing)
 
 recipeView :: Text -> View Html -> Html
-recipeView action v = D.form v action $ do D.childErrorList "" v
-                                           br
-                                           D.label "name" v "Name"
-                                           D.inputText "name" v
-                                           br
-                                           D.label "book_id" v "Book"
-                                           D.inputSelect "book_id" v
-                                           br
-                                           D.label "page_number" v "Page Number"
-                                           D.inputText "page_number" v
-                                           br
-                                           D.inputHidden "instructions" v
-                                           -- D.label "instructions" v "Instructions"
-                                           -- D.inputTextArea (Just 20) (Just 50) "instructions" v
-                                           -- br
-                                           D.label "ingredients" v "Ingredients"
-                                           D.inputTextArea (Just 20) (Just 50) "ingredients" v
-                                           br
-                                           D.label "total_time" v "Total Time"
-                                           D.inputText "total_time" v
-                                           br
-                                           D.label "active_time" v "Active Time"
-                                           D.inputText "active_time" v
-                                           br
-                                           D.label "number_servings" v "Number of Servings"
-                                           D.inputText "number_servings" v
-                                           br
-                                           D.label "complexity" v "Complexity"
-                                           D.inputSelect "complexity" v
-                                           br
-                                           D.inputSubmit "Save"
+recipeView action v = D.form v action $
+  do D.childErrorList "" v
+     br
+     D.label "name" v "Name"
+     D.inputText "name" v
+     br
+     D.label "book_id" v "Book"
+     D.inputSelect "book_id" v
+     br
+     D.label "page_number" v "Page Number"
+     D.inputText "page_number" v
+     br
+     D.inputHidden "instructions" v
+     -- D.label "instructions" v "Instructions"
+     -- D.inputTextArea (Just 20) (Just 50) "instructions" v
+     -- br
+     D.label "ingredients" v "Ingredients"
+     D.inputTextArea (Just 20) (Just 50) "ingredients" v
+     br
+     D.label "total_time" v "Total Time"
+     D.inputText "total_time" v
+     br
+     D.label "active_time" v "Active Time"
+     D.inputText "active_time" v
+     br
+     D.label "number_servings" v "Number of Servings"
+     D.inputText "number_servings" v
+     br
+     D.label "complexity" v "Complexity"
+     D.inputSelect "complexity" v
+     br
+     D.inputSubmit "Save"
 
 main :: IO ()
 main = do port <- envDef "PORT" 3000
@@ -104,7 +105,9 @@ main = do port <- envDef "PORT" 3000
           database <- envDef "PGDATABASE" "mealstrat_devel"
           pg <- createPool (connect (ConnectInfo host pgport user password database)) close 1 5 20
           scotty port $
-            do get "/" $
+            do get "/static/main.css" $ S.file "static/main.css"
+               get "/static/circle.png" $ S.file "static/circle.png"
+               get "/" $
                  do blaze $ do p $ a ! href "/recipes" $ "All Recipes"
                                H.form ! method "POST" $ do H.label ! for "single" $ "Single"
                                                            H.input ! name "single" ! value "4"
@@ -138,7 +141,7 @@ main = do port <- envDef "PORT" 3000
                                                                         return ((r, b), is))
                                                              meal)
                                                      day) ps
-                    blaze $ do H.style ! type_ "text/css" $ "@page {size: auto; margin: 25mm;} body { width: 8.75in; font-size: 9pt; margin: 0; } h4 { margin: 0; float: left; padding: 5px; margin: 5px; color: #fff; background-color: #000; border-radius: 10px; } p { margin: 5px; } .plan { width: 49%; height: 5.45in; display: inline-block; vertical-align: top; border: 1px solid #000; padding: 0.1in 0; } .meals { width: 30%; float: right;  } .meal { transform: rotate(270deg); width: 1.6in; height: 1.6in; padding: 5px; margin: 5px 0;}  .ingredients { margin: 0; padding: 5px; padding-left: 10px; width: 65%; float: right; list-style-type: none; font-size: 0.85em; } li { display: inline; float: left; width: 50%; line-height: 1.6em; } "
+                    blaze $ do H.link ! rel "stylesheet" ! href "/static/main.css"
                                mapM_ (\day -> H.div ! class_ "plan" $ do formatIngredients (combineIngredients (concat day))
                                                                          H.div ! class_ "meals" $ mapM_ (\(n, meal) -> formatMeal n (Prelude.map fst meal)) (reverse $ zip [1..] day)
                                                                          )
