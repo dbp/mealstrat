@@ -1,0 +1,13 @@
+branch-defaults:
+  master:
+    environment: mealstrat-prod
+global:
+  application_name: mealstrat
+  default_ec2_keyname: aws-eb
+  default_platform: 64bit Amazon Linux 2015.03 v2.0.0 running Multi-container Docker
+    1.6.2 (Generic)
+  default_region: us-east-1
+  profile: null
+  sc: git
+deploy:
+  artifact: deploy/artifact.zip

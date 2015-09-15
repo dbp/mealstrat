@@ -1,0 +1,28 @@
+{
+  "AWSEBDockerrunVersion": 2,
+  "volumes": [],
+  "authentication": {
+    "bucket": "creds.dbp.io",
+    "key": "dockercfg"
+  },
+  "containerDefinitions": [
+    {
+      "name": "mealstrat",
+      "image": "quay.io/dbp1/mealstrat:HASH",
+      "essential": true,
+      "memory": 256,
+      "mountPoints": [
+        {
+          "sourceVolume": "awseb-logs-mealstrat",
+          "containerPath": "/srv/log"
+        }
+      ],
+      "portMappings": [
+        {
+          "hostPort": 80,
+          "containerPort": 3000
+        }
+      ]
+    }
+  ]
+}
