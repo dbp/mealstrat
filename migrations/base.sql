@@ -35,3 +35,8 @@ CREATE TABLE recipe_ingredients (
     original_text text NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now()
 );
+
+CREATE TABLE short_urls (
+  short text PRIMARY KEY,
+  url text NOT NULL
+);

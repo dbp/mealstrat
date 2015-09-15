@@ -103,6 +103,7 @@ main = do port <- envDef "PORT" 3000
           password <- envDef "PGPASS" "111"
           database <- envDef "PGDATABASE" "mealstrat_devel"
           pg <- createPool (connect (ConnectInfo host pgport user password database)) close 1 5 20
+          hostname <- envDef "HOSTNAME" "localhost:3000"
           scotty port $
             do get "/static/main.css" $ S.file "static/main.css"
                get "/static/circle.png" $ S.file "static/circle.png"
@@ -129,7 +130,11 @@ main = do port <- envDef "PORT" 3000
                     let singleMeals = Prelude.map (:[]) $ take singleDays meals
                     let doubleMeals = foldUp (take (doubleDays * 2) $ drop singleDays meals)
                     let tripleMeals = foldUp3 (drop (singleDays + (doubleDays * 2)) meals)
-                    redirect $ constructPlanUrl (singleMeals <> doubleMeals <> tripleMeals)
+                    let planUrl = constructPlanUrl (singleMeals <> doubleMeals <> tripleMeals)
+                    (Just (ShortUrl s _)) <- liftIO $ createShortUrl pg (TL.toStrict planUrl)
+                    let target = planUrl <> "&short=" <> TL.fromStrict s
+                    liftIO $ updateShortUrl pg s (TL.toStrict target)
+                    redirect target
                get "/plan" $
                  do ps <- getPlans
                     recipes <- liftIO $ mapM (\day ->
@@ -140,6 +145,7 @@ main = do port <- envDef "PORT" 3000
                                                                         return ((r, b), is))
                                                              meal)
                                                      day) ps
+                    short <- optparam "short"
                     blaze $ do H.link ! rel "stylesheet" ! href "/static/main.css"
                                mapM_ (\day -> H.div ! class_ "plan" $
                                               do let meals = reverse $ zip [1..] day
@@ -149,7 +155,9 @@ main = do port <- envDef "PORT" 3000
                                                  formatIngredients ingredToNs (combineIngredients (concat day))
                                                  H.div ! class_ "meals" $ mapM_ (\(n, meal) ->
                                                    formatMeal n (Prelude.map fst meal)) meals
-                                                                         )
+                                                 maybe (return ())
+                                                       (\s -> H.div ! A.style "text-align: center;" $ H.text ("http://" <> hostname <> "/" <> s))
+                                                       short)
                                      recipes
                get "/recipes" $
                   do recipes <- liftIO (getRecipes pg)
@@ -175,6 +183,12 @@ main = do port <- envDef "PORT" 3000
                                         blaze $ do p $ a ! href "/recipes" $ "All Recipes"
                                                    p (H.text (rName recipe))
                                                    formatIngredients (M.empty :: M.Map Int [Text]) ingredients
+               get "/:short" $
+                 do short <- S.param "short"
+                    mu <- liftIO $ getShortUrl pg short
+                    case mu of
+                      Nothing -> next
+                      Just u -> redirect (TL.fromStrict $ sUrl u)
   where constructPlanUrl plans = TL.fromStrict $
           "/plan?" <> (T.intercalate "&" $ Prelude.map format $ concat . concat $ Prelude.map ((Prelude.map ununTuple) .unTuple) $
             zip [0..] (Prelude.map (zip [0..] . Prelude.map (zip [0..])) plans))

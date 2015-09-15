@@ -3,6 +3,7 @@
 
 module Lib where
 
+import Control.Monad (void)
 import Data.Maybe
 import Data.Functor.Identity
 import           Control.Applicative                  hiding ((<|>))
@@ -96,6 +97,14 @@ instance FromRow Book where
   fromRow = Book <$> field <*> field <*> field
                  <*> field <*> field
 
+
+data ShortUrl = ShortUrl { sShort     :: Text
+                         , sUrl  :: Text
+                         } deriving (Eq, Show)
+
+instance FromRow ShortUrl where
+  fromRow = ShortUrl <$> field <*> field
+
 parseResult :: Stream s Identity t => Parsec s () a -> s -> Result Html a
 parseResult parser input = case parse parser "" input of
                                    Left err -> Error $ H.text $ T.pack $ show err
@@ -155,6 +164,15 @@ getBooks pg = withResource pg (\con -> query_ con "SELECT id, title, short, auth
 
 getBookById :: Pool Connection -> Int -> IO (Maybe Book)
 getBookById pg i = withResource pg (\con -> listToMaybe <$> query con "SELECT id, title, short, author, year FROM books WHERE id = ?" (Only i))
+
+createShortUrl :: Pool Connection -> Text -> IO (Maybe ShortUrl)
+createShortUrl pg target = withResource pg (\con -> listToMaybe <$> query con "INSERT INTO short_urls (short, url) VALUES (substr(md5(random()::text), 0, 6),?) RETURNING short, url" (Only target))
+
+updateShortUrl :: Pool Connection -> Text -> Text -> IO ()
+updateShortUrl pg short target = withResource pg (\con -> void $ execute con "UPDATE short_urls SET url = ? WHERE short = ?" (target, short))
+
+getShortUrl :: Pool Connection -> Text -> IO (Maybe ShortUrl)
+getShortUrl pg s = withResource pg (\con -> listToMaybe <$> query con "SELECT short, url FROM short_urls WHERE short = ?" (Only s))
 
 getRecipeIngredients :: Pool Connection -> Recipe -> IO [(Ingredient, RecipeIngredient)]
 getRecipeIngredients pg recipe = withResource pg (\con -> do res <- query con "SELECT I.id, I.name, I.grams_per_cc, R.recipe_id, R.ingredient_id, R.units, R.quantity, R.original_text FROM ingredients AS I JOIN recipe_ingredients as R on R.ingredient_id = I.id WHERE R.recipe_id = ?" (Only (rId recipe))

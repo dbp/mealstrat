@@ -25,11 +25,11 @@ p {
 }
 .plan {
   width: 49%;
-  height: 5.45in;
+  height: 5.25in;
   display: inline-block;
   vertical-align: top;
   border: 1px solid #000;
-  padding: 0.1in 0;
+  padding: 0.2in 0;
 }
 .meals {
   width: 30%;
@@ -40,7 +40,7 @@ p {
   width: 1.6in;
   height: 1.6in;
   padding: 5px;
-  margin: 5px 0;
+  margin: 0;
 }
 .ingredients {
   margin: 0;
