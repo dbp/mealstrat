@@ -122,7 +122,7 @@ main = do port <- envDef "PORT" 3000
                     doubleDays <- S.param "double"
                     tripleDays <- S.param "triple"
                     rs <- liftIO $ getNRecipesWithComplexityGe pg (singleDays + (doubleDays * 2) + (tripleDays * 3)) 3
-                    meals <- mapM (\main -> if rComplexity main < 5
+                    meals <- mapM (\main -> if rComplexity main == 3
                                                then do Just side <- liftIO $ getRecipeWithComplexityLe pg 2
                                                        return [main, side]
                                                else return [main])
