@@ -7,7 +7,8 @@ module Main where
 
 import           Control.Monad.Trans
 import           Data.Function
-import           Data.List                     (nubBy, sortBy)
+import           Data.List                     (nub, nubBy, sortBy)
+import qualified Data.Map                      as M
 import           Data.Maybe
 import           Data.Monoid                   ((<>))
 import           Data.Ord                      (comparing)
@@ -16,8 +17,6 @@ import           Data.Text                     (Text)
 import qualified Data.Text                     as T
 import qualified Data.Text.Lazy                as TL
 import           Database.PostgreSQL.Simple
-import           Graphics.PDF
-import           Graphics.PDF.Typesetting
 import           System.Environment
 import           Text.Blaze.Html.Renderer.Text
 import           Text.Blaze.Html5              hiding (main)
@@ -142,9 +141,14 @@ main = do port <- envDef "PORT" 3000
                                                              meal)
                                                      day) ps
                     blaze $ do H.link ! rel "stylesheet" ! href "/static/main.css"
-                               mapM_ (\day -> H.div ! class_ "plan" $ do formatIngredients (combineIngredients (concat day))
-                                                                         H.div ! class_ "meals" $ mapM_ (\(n, meal) ->
-                                                                           formatMeal n (Prelude.map fst meal)) (reverse $ zip [1..] day)
+                               mapM_ (\day -> H.div ! class_ "plan" $
+                                              do let meals = reverse $ zip [1..] day
+                                                 let lookupT = M.fromList (concat (Prelude.map (\(n,ms) -> Prelude.map ((,tshow n) . rId . fst . fst) ms) meals))
+                                                 let ingredToNs = M.fromListWith (<>) (concat $ Prelude.map (\((r,_), is) -> Prelude.map (\(i,_) -> (iId i, [lookupT M.! (rId r)])) is)
+                                                                                                            (concat day))
+                                                 formatIngredients ingredToNs (combineIngredients (concat day))
+                                                 H.div ! class_ "meals" $ mapM_ (\(n, meal) ->
+                                                   formatMeal n (Prelude.map fst meal)) meals
                                                                          )
                                      recipes
                get "/recipes" $
@@ -170,7 +174,7 @@ main = do port <- envDef "PORT" 3000
                       Just recipe -> do ingredients <- liftIO $ getRecipeIngredients pg recipe
                                         blaze $ do p $ a ! href "/recipes" $ "All Recipes"
                                                    p (H.text (rName recipe))
-                                                   formatIngredients ingredients
+                                                   formatIngredients (M.empty :: M.Map Int [Text]) ingredients
   where constructPlanUrl plans = TL.fromStrict $
           "/plan?" <> (T.intercalate "&" $ Prelude.map format $ concat . concat $ Prelude.map ((Prelude.map ununTuple) .unTuple) $
             zip [0..] (Prelude.map (zip [0..] . Prelude.map (zip [0..])) plans))
@@ -188,8 +192,11 @@ main = do port <- envDef "PORT" 3000
                                      then getPlans' (day : plans) [] [] (p+1) 0 0
                                      else return plans
                              )
-        formatIngredients = (ul ! class_ "ingredients") . mapM_ (\(i, ri) -> li (H.text ((drop0 $ T.pack $ take 3 $ show (riQuantity ri)) <> formatUnits (riUnits ri) <> " " <> iName i)))
-          where drop0 s = fromMaybe s $ T.stripSuffix ".0" s
+        formatIngredients rt = (ul ! class_ "ingredients") . mapM_ (\(i, ri) -> li $ do H.text ((dropSuffix "." $ dropSuffix ".0" $ T.pack $ take 3 $ show (riQuantity ri)) <> formatUnits (riUnits ri) <> " " <> iName i)
+                                                                                        maybe (return ())
+                                                                                              (mapM_ (\n -> H.span ! class_ "n" $ H.text n) . reverse . nub)
+                                                                                              (M.lookup (iId i) rt))
+          where dropSuffix suffix s = fromMaybe s $ T.stripSuffix suffix s
         formatMeal n (dishes :: [(Recipe, Maybe Book)]) =
            H.div ! class_ "meal" $
             do h4 (H.text (tshow n))

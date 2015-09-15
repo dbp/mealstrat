@@ -55,4 +55,17 @@ li {
   display: inline;
   float: left;
   width: 50%;
-  line-height: 1.6em; }
+  line-height: 1.6em;
+}
+.n {
+  margin: 1px;
+  width: 10px;
+  display: inline-block;
+  text-align: center;
+  color: #000 !important;
+  background-image: url("/static/circle.png");
+  background-size: 10px 12px;
+  background-position: center;
+  background-repeat: no-repeat;
+
+}
