@@ -35,8 +35,11 @@ import           Lib
 blaze :: Html -> ActionM ()
 blaze = Web.Scotty.html . renderHtml
 
-envDef :: Read a => String -> a -> IO a
-envDef key def = maybe def read <$> lookupEnv key
+envDef :: String -> String -> IO String
+envDef key def = fromMaybe def <$> lookupEnv key
+
+envDefRead :: Read a => String -> a -> IO a
+envDefRead key def = maybe def read <$> lookupEnv key
 
 tshow :: Show a => a -> Text
 tshow = T.pack . show
@@ -96,9 +99,9 @@ recipeView action v = D.form v action $
      D.inputSubmit "Save"
 
 main :: IO ()
-main = do port <- envDef "PORT" 3000
+main = do port <- envDefRead "PORT" 3000
           host <- envDef "PGHOST" "localhost"
-          pgport <- envDef "PGPORT" 5432
+          pgport <- envDefRead "PGPORT" 5432
           user <- envDef "PGUSER" "mealstrat_user"
           password <- envDef "PGPASS" "111"
           database <- envDef "PGDATABASE" "mealstrat_devel"
@@ -156,7 +159,7 @@ main = do port <- envDef "PORT" 3000
                                                  H.div ! class_ "meals" $ mapM_ (\(n, meal) ->
                                                    formatMeal n (Prelude.map fst meal)) meals
                                                  maybe (return ())
-                                                       (\s -> H.div ! A.style "text-align: center;" $ H.text ("http://" <> hostname <> "/" <> s))
+                                                       (\s -> H.div ! A.style "text-align: center;" $ H.text ("http://" <> T.pack hostname <> "/" <> s))
                                                        short)
                                      recipes
                get "/recipes" $
