@@ -24,11 +24,10 @@ p {
   margin: 5px;
 }
 .plan {
-  width: 49%;
-  height: 5.25in;
+  width: 50%;
+  height: 5.4in;
   display: inline-block;
   vertical-align: top;
-  border: 1px solid #000;
   padding: 0.2in 0;
 }
 .meals {
