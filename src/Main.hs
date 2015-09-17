@@ -7,7 +7,7 @@ module Main where
 
 import           Control.Monad.Trans
 import           Data.Function
-import           Data.List                     (nub, nubBy, sortBy)
+import           Data.List                     (nub, sortBy)
 import qualified Data.Map                      as M
 import           Data.Maybe
 import           Data.Monoid                   ((<>))
@@ -111,14 +111,14 @@ main = do port <- envDefRead "PORT" 3000
             do get "/static/main.css" $ S.file "static/main.css"
                get "/static/circle.png" $ S.file "static/circle.png"
                get "/" $
-                 do blaze $ do p $ a ! href "/recipes" $ "All Recipes"
-                               H.form ! method "POST" $ do H.label ! for "single" $ "Single"
-                                                           H.input ! name "single" ! value "4"
-                                                           H.label ! for "double" $ "Double"
-                                                           H.input ! name "double" ! value "0"
-                                                           H.label ! for "triple" $ "Triple"
-                                                           H.input ! name "triple" ! value "4"
-                                                           button "Get Meal Plan"
+                 blaze $ do p $ a ! href "/recipes" $ "All Recipes"
+                            H.form ! method "POST" $ do H.label ! for "single" $ "Single"
+                                                        H.input ! name "single" ! value "4"
+                                                        H.label ! for "double" $ "Double"
+                                                        H.input ! name "double" ! value "0"
+                                                        H.label ! for "triple" $ "Triple"
+                                                        H.input ! name "triple" ! value "4"
+                                                        button "Get Meal Plan"
                post "/" $
                  do -- current numbers amount to 16 full meals
                     singleDays <- S.param "single"
@@ -155,7 +155,7 @@ main = do port <- envDefRead "PORT" 3000
                                                  let lookupT = M.fromList (concat (Prelude.map (\(n,ms) -> Prelude.map ((,tshow n) . rId . fst . fst) ms) meals))
                                                  let ingredToNs = M.fromListWith (<>) (concat $ Prelude.map (\((r,_), is) -> Prelude.map (\(i,_) -> (iId i, [lookupT M.! (rId r)])) is)
                                                                                                             (concat day))
-                                                 formatIngredients ingredToNs (combineIngredients (concat day))
+                                                 formatIngredients ingredToNs (combineIngredients (concat $ Prelude.map snd (concat day)))
                                                  H.div ! class_ "meals" $ mapM_ (\(n, meal) ->
                                                    formatMeal n (Prelude.map fst meal)) meals
                                                  maybe (return ())
@@ -229,15 +229,3 @@ main = do port <- envDefRead "PORT" 3000
         foldUp3 (x:y:z:rest) = [x,y,z] : foldUp3 rest
         foldUp4 [] = []
         foldUp4 (x:y:z:t:rest) = [x,y,z,t] : foldUp4 rest
-        combineIngredients :: [((Recipe, Maybe Book), [(Ingredient, RecipeIngredient)])] -> [(Ingredient, RecipeIngredient)]
-        combineIngredients rs =
-          let ingredients = concat $ Prelude.map snd rs in
-          let unique = nubBy (\a b -> (iId $ fst a) == (iId $ fst b) && convertable (riUnits (snd a)) (riUnits (snd b))) ingredients in
-          Prelude.map (\i ->
-                 let others = filter ((== iId (fst i)) . iId . fst) ingredients in
-                 let same_units = filter ((== (riUnits (snd i))) . riUnits . snd) others in
-                 let diff_units = filter ((/= (riUnits (snd i))) . riUnits . snd) others in
-                 let same_count = sum (Prelude.map (riQuantity . snd) same_units) in
-                 let diff_count = sum (Prelude.map (\o -> (fromMaybe 0 $ convertUnits (riUnits (snd o)) (riUnits (snd i))) * (riQuantity (snd o))) diff_units)
-                 in (fst i, (snd i) { riQuantity = same_count + diff_count } )
-              ) unique

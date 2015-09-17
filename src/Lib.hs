@@ -3,6 +3,7 @@
 
 module Lib where
 
+import Data.List (nubBy)
 import Control.Monad (void)
 import Data.Maybe
 import Data.Functor.Identity
@@ -49,7 +50,7 @@ convertUnits Tablespoons Teaspoons = Just 3
 convertUnits Teaspoons Tablespoons = Just (1/3)
 convertUnits Cups Tablespoons = Just 16
 convertUnits Tablespoons Cups = Just (1/16)
-convertUnits from to = Nothing
+convertUnits from to = if from == to then Just 1 else Nothing
 
 data Recipe = Recipe { rId             :: Int
                      , rName           :: Text
@@ -201,3 +202,18 @@ ensureIngredient pg i@Ingredient{..} =
                                           [Only id''] -> return (Just i { iId = id'' })
                                           _ -> return Nothing
                   )
+
+
+uniqueIngredients :: [(Ingredient, RecipeIngredient)] -> [(Ingredient, RecipeIngredient)]
+uniqueIngredients = nubBy (\a b -> (iId $ fst a) == (iId $ fst b) && convertable (riUnits (snd a)) (riUnits (snd b)))
+
+combineIngredients :: [(Ingredient, RecipeIngredient)] -> [(Ingredient, RecipeIngredient)]
+combineIngredients ingredients =
+  Prelude.map (\i ->
+    let others = filter ((== iId (fst i)) . iId . fst) ingredients in
+    let same_units = filter ((== (riUnits (snd i))) . riUnits . snd) others in
+    let diff_units = filter ((/= (riUnits (snd i))) . riUnits . snd) others in
+    let same_count = sum (Prelude.map (riQuantity . snd) same_units) in
+    let diff_count = sum (Prelude.map (\o -> (fromMaybe 0 $ convertUnits (riUnits (snd o)) (riUnits (snd i))) * (riQuantity (snd o))) diff_units)
+    in (fst i, (snd i) { riQuantity = same_count + diff_count } )
+    ) (uniqueIngredients ingredients)
