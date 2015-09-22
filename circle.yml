@@ -16,10 +16,11 @@ dependencies:
     - stack setup
     - stack clean
     - stack build --jobs=4
+    - stack test mealstrat --no-run-tests
 
 test:
   override:
-    - echo 0
+    - stack test mealstrat
 
 deployment:
   prod:
