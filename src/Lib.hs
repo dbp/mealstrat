@@ -24,6 +24,9 @@ import           Text.Read (readMaybe)
 import Data.Traversable
 import Data.Maybe
 
+tshow :: Show a => a -> Text
+tshow = T.pack . show
+
 fieldRead :: Read a => RowParser a
 fieldRead = do s <- field
                case readMaybe s of
@@ -41,6 +44,9 @@ formatUnits Cups = " cups"
 formatUnits Tablespoons = " Tbsp"
 formatUnits Teaspoons = " tsp"
 formatUnits CCs = "cc"
+
+formatTime :: NominalDiffTime -> Text
+formatTime t = tshow (floor $ 1/60 * (realToFrac t)) <> "mins"
 
 convertable :: Units -> Units -> Bool
 convertable from to = isJust (convertUnits from to)
@@ -107,9 +113,10 @@ instance FromRow ShortUrl where
   fromRow = ShortUrl <$> field <*> field
 
 parseResult :: Stream s Identity t => Parsec s () a -> s -> Result Html a
-parseResult parser input = case parse parser "" input of
-                                   Left err -> Error $ H.text $ T.pack $ show err
-                                   Right v -> Success v
+parseResult parser input =
+  case parse parser "" input of
+          Left err -> Error $ H.text $ T.pack $ show err
+          Right v -> Success v
 
 parseTime :: Text -> Result Html NominalDiffTime
 parseTime = parseResult $ do n <- many1 digit
@@ -117,27 +124,28 @@ parseTime = parseResult $ do n <- many1 digit
                              choice [string "m", string "min", string "mins"]
                              return (fromIntegral $ 60 * read n)
 
+unitParser strings unit = choice (map (try . string) strings) >> return unit
+ingredientParser original =
+  do n <- many1 digit
+     d <- option 0 $ do char '.'
+                        n' <- many1 digit
+                        return (read ("0." ++ n'))
+     let quantity = read n + d
+     spaces
+     unit <- option Single (choice [unitParser ["grams", "gram"] Grams
+                                   ,unitParser ["ounces","oz","ounce"] Ounces
+                                   ,unitParser ["lb", "lbs", "pounds"] Pounds
+                                   ,unitParser ["cups", "cup"] Cups
+                                   ,unitParser ["tablespoons", "tablespoon", "tbsp", "Tbsp"] Tablespoons
+                                   ,unitParser ["teaspoons", "teaspoon", "tsp"] Teaspoons
+                                   ,unitParser ["ccs", "cc", "cubic centimeters"] CCs])
+     spaces
+     desc <- many1 (choice [alphaNum, space])
+     return (Ingredient 0 (T.strip $ T.pack desc) Nothing, RecipeIngredient 0 0 unit quantity original)
+
 parseIngredients :: Text -> Result Html [(Ingredient, RecipeIngredient)]
 parseIngredients inp = do let lines = T.lines inp
                           sequenceA (map (\l -> parseResult (ingredientParser l) l) lines)
-  where unitParser strings unit = choice (map (try . string) strings) >> return unit
-        ingredientParser original =
-          do n <- many1 digit
-             d <- option 0 $ do char '.'
-                                n' <- many1 digit
-                                return (read ("0." ++ n'))
-             let quantity = read n + d
-             spaces
-             unit <- option Single (choice [unitParser ["grams", "gram"] Grams
-                                           ,unitParser ["ounces","oz","ounce"] Ounces
-                                           ,unitParser ["lb", "lbs", "pounds"] Pounds
-                                           ,unitParser ["cups", "cup"] Cups
-                                           ,unitParser ["tablespoons", "tablespoon", "tbsp", "Tbsp"] Tablespoons
-                                           ,unitParser ["teaspoons", "teaspoon", "tsp"] Teaspoons
-                                           ,unitParser ["ccs", "cc", "cubic centimeters"] CCs])
-             spaces
-             desc <- many1 (choice [alphaNum, space])
-             return (Ingredient 0 (T.strip $ T.pack desc) Nothing, RecipeIngredient 0 0 unit quantity original)
 
 createIngredients :: Pool Connection -> Int -> [(Ingredient, RecipeIngredient)] -> IO ()
 createIngredients pg rid ingredients =
@@ -184,6 +192,9 @@ newRecipe pg r@Recipe{..} = withResource pg (\con -> do res <- query con "INSERT
                                                         case res of
                                                           [Only i] -> return (Just r { rId = i })
                                                           _ -> return Nothing)
+
+updateRecipe :: Pool Connection -> Recipe -> IO ()
+updateRecipe pg Recipe{..} = withResource pg (\con -> do void $ execute con "UPDATE recipes SET name = ?, book_id = ?, page_number = ?, instructions = ?, total_time = ?, active_time = ?, number_servings = ?, complexity = ? WHERE id = ?" (rName, rBookId, rPageNumber, rInstructions, rTotalTime, rActiveTime, rNumberServings, rComplexity, rId))
 
 newRecipeIngredient :: Pool Connection -> RecipeIngredient -> IO (Maybe RecipeIngredient)
 newRecipeIngredient pg ri@RecipeIngredient{..} =

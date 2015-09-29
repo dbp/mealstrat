@@ -31,7 +31,7 @@ CREATE TABLE recipe_ingredients (
     recipe_id integer NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
     ingredient_id integer NOT NULL REFERENCES ingredients(id) ON DELETE RESTRICT,
     units text NOT NULL,
-    quantity integer NOT NULL,
+    quantity float NOT NULL,
     original_text text NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now()
 );

@@ -41,28 +41,26 @@ envDef key def = fromMaybe def <$> lookupEnv key
 envDefRead :: Read a => String -> a -> IO a
 envDefRead key def = maybe def read <$> lookupEnv key
 
-tshow :: Show a => a -> Text
-tshow = T.pack . show
-
 optparam :: Parsable a => TL.Text -> ActionM (Maybe a)
 optparam name = (Just <$> S.param name) `rescue` (\_ -> return Nothing)
 
-recipeForm :: Monad m => [Book] -> Form Html m (Recipe, [(Ingredient, RecipeIngredient)])
-recipeForm books =
-  (,) <$> (Recipe 0 <$> "name" .: D.text Nothing
-                    <*> "book_id" .: choice ((Nothing, "") : Prelude.map (\b -> (Just (bId b), H.text $ bTitle b)) books) Nothing
-                    <*> "page_number" .: optionalStringRead "Must be an integer" Nothing
-                    <*> "instructions" .: D.text Nothing
-                    <*> "total_time" .: validate parseTime (D.text Nothing)
-                    <*> "active_time" .: validate parseTime (D.text Nothing)
-                    <*> "number_servings" .: stringRead "Must be an integer" Nothing
-                    <*> "complexity" .: choice [(1, "1 (Small Side)")
-                                               ,(2, "2 (Large Side)")
-                                               ,(3, "3 (Normal Dish)")
-                                               ,(4, "4 (Large Dish)")
-                                               ,(5, "5 (Full Meal)")]
-                                               Nothing)
-      <*> "ingredients" .: validate parseIngredients (D.text Nothing)
+recipeForm :: Monad m => [Book] -> Maybe Recipe -> Form Html m (Recipe, [(Ingredient, RecipeIngredient)])
+recipeForm books mrecipe =
+  (,) <$> (Recipe (fromMaybe 0 (rId <$> mrecipe))
+                  <$> "name" .: D.text (rName <$> mrecipe)
+                  <*> "book_id" .: choice ((Nothing, "") : Prelude.map (\b -> (Just (bId b), H.text $ bTitle b)) books) (rBookId <$> mrecipe)
+                  <*> "page_number" .: optionalStringRead "Must be an integer" (maybe Nothing rPageNumber mrecipe)
+                  <*> "instructions" .: D.text (rInstructions <$> mrecipe)
+                  <*> "total_time" .: validate parseTime (D.text (formatTime . rTotalTime <$> mrecipe))
+                  <*> "active_time" .: validate parseTime (D.text (formatTime . rActiveTime <$> mrecipe))
+                  <*> "number_servings" .: stringRead "Must be an integer" (rNumberServings <$> mrecipe)
+                  <*> "complexity" .: choice [(1, "1 (Small Side)")
+                                             ,(2, "2 (Large Side)")
+                                             ,(3, "3 (Normal Dish)")
+                                             ,(4, "4 (Large Dish)")
+                                             ,(5, "5 (Full Meal)")]
+                                             (rComplexity <$> mrecipe))
+      <*> "ingredients" .: validate parseIngredients (D.text (maybe Nothing (const (Just "1 Cannot update ingredients yet")) mrecipe))
 
 recipeView :: Text -> View Html -> Html
 recipeView action v = D.form v action $
@@ -77,10 +75,9 @@ recipeView action v = D.form v action $
      D.label "page_number" v "Page Number"
      D.inputText "page_number" v
      br
-     D.inputHidden "instructions" v
-     -- D.label "instructions" v "Instructions"
-     -- D.inputTextArea (Just 20) (Just 50) "instructions" v
-     -- br
+     D.label "instructions" v "Instructions"
+     D.inputTextArea (Just 20) (Just 50) "instructions" v
+     br
      D.label "ingredients" v "Ingredients"
      D.inputTextArea (Just 20) (Just 50) "ingredients" v
      br
@@ -112,13 +109,13 @@ main = do port <- envDefRead "PORT" 3000
                get "/static/circle.png" $ S.file "static/circle.png"
                get "/" $
                  blaze $ do p $ a ! href "/recipes" $ "All Recipes"
-                            H.form ! method "POST" $ do H.label ! for "single" $ "Single"
+                            H.form ! method "POST" $ do H.label ! for "single" $ "Single Meals"
                                                         H.input ! name "single" ! value "4"
-                                                        H.label ! for "double" $ "Double"
+                                                        H.label ! for "double" $ "Double Meals"
                                                         H.input ! name "double" ! value "0"
-                                                        H.label ! for "triple" $ "Triple"
+                                                        H.label ! for "triple" $ "Triple Meals"
                                                         H.input ! name "triple" ! value "4"
-                                                        button "Get Meal Plan"
+                                                        button "Generate Meal Plan"
                post "/" $
                  do -- current numbers amount to 16 full meals
                     singleDays <- S.param "single"
@@ -149,26 +146,27 @@ main = do port <- envDefRead "PORT" 3000
                                                              meal)
                                                      day) ps
                     short <- optparam "short"
-                    blaze $ do H.link ! rel "stylesheet" ! href "/static/main.css"
-                               mapM_ (\day -> H.div ! class_ "plan" $
-                                              do let meals = reverse $ zip [1..] day
-                                                 let lookupT = M.fromList (concat (Prelude.map (\(n,ms) -> Prelude.map ((,tshow n) . rId . fst . fst) ms) meals))
-                                                 let ingredToNs = M.fromListWith (<>) (concat $ Prelude.map (\((r,_), is) -> Prelude.map (\(i,_) -> (iId i, [lookupT M.! (rId r)])) is)
-                                                                                                            (concat day))
-                                                 formatIngredients ingredToNs (combineIngredients (concat $ Prelude.map snd (concat day)))
-                                                 H.div ! class_ "meals" $ mapM_ (\(n, meal) ->
-                                                   formatMeal n (Prelude.map fst meal)) meals
-                                                 maybe (return ())
-                                                       (\s -> H.div ! A.style "text-align: center;" $ H.text ("http://" <> T.pack hostname <> "/" <> s))
-                                                       short)
-                                     recipes
+                    blaze $ do H.body ! onload "alert('This is formatted to print out onto 4-up sheets on Google Chrome 45 for Mac. It may work printing out on other platforms, but has not been tested.')" $
+                                 do H.link ! rel "stylesheet" ! href "/static/main.css"
+                                    mapM_ (\day -> H.div ! class_ "plan" $
+                                                   do let meals = reverse $ zip [1..] day
+                                                      let lookupT = M.fromList (concat (Prelude.map (\(n,ms) -> Prelude.map ((,tshow n) . rId . fst . fst) ms) meals))
+                                                      let ingredToNs = M.fromListWith (<>) (concat $ Prelude.map (\((r,_), is) -> Prelude.map (\(i,_) -> (iId i, [lookupT M.! (rId r)])) is)
+                                                                                                                 (concat day))
+                                                      formatIngredients ingredToNs (combineIngredients (concat $ Prelude.map snd (concat day)))
+                                                      H.div ! class_ "meals" $ mapM_ (\(n, meal) ->
+                                                        formatMeal n (Prelude.map fst meal)) meals
+                                                      maybe (return ())
+                                                            (\s -> H.div ! A.style "text-align: center;" $ H.text ("http://" <> T.pack hostname <> "/" <> s))
+                                                            short)
+                                          recipes
                get "/recipes" $
                   do recipes <- liftIO (getRecipes pg)
                      blaze $ do p $ a ! href "/recipes/new" $ "New Recipe"
                                 ul $ mapM_ (\r -> li (a ! href (H.textValue $ "/recipes/" <> tshow (rId r)) $ H.text $ rName r)) recipes
                matchAny "/recipes/new" $
                  do books <- liftIO (getBooks pg)
-                    (view, result) <- runForm "recipe" (recipeForm books)
+                    (view, result) <- runForm "recipe" (recipeForm books Nothing)
                     case result of
                       Just (recipe, ingredients) -> do mr <- liftIO $ newRecipe pg recipe
                                                        case mr of
@@ -177,15 +175,38 @@ main = do port <- envDefRead "PORT" 3000
                                                        redirect "/recipes"
                       Nothing -> blaze $ do H.style ! type_ "text/css" $ "input { width: 80%; display: inline-block; font-size: 15pt; } textarea { width: 80%; display: inline-block; font-size: 15pt } label { width: 20%; font-size: 15pt; display: inline-block; } select { font-size: 15pt } "
                                             recipeView "/recipes/new" view
+               matchAny "/recipes/:id/edit" $
+                 do i <- S.param "id"
+                    mr <- liftIO $ getRecipe pg i
+                    case mr of
+                      Nothing -> next
+                      Just recipe -> do books <- liftIO (getBooks pg)
+                                        (view, result) <- runForm "recipe" (recipeForm books (Just recipe))
+                                        case result of
+                                          Just (recipe, _) -> do liftIO $ updateRecipe pg recipe
+                                                                 redirect ("/recipes/" <> TL.fromStrict (tshow (rId recipe)))
+                                          Nothing -> blaze $ do p $ do a ! href "/recipes" $ "All Recipes"
+                                                                       H.text " | "
+                                                                       a ! href (H.textValue ("/recipes/" <> tshow (rId recipe))) $ "Back"
+                                                                H.style ! type_ "text/css" $ "input { width: 80%; display: inline-block; font-size: 15pt; } textarea { width: 80%; display: inline-block; font-size: 15pt } label { width: 20%; font-size: 15pt; display: inline-block; } select { font-size: 15pt } "
+                                                                recipeView ("/recipes/" <> tshow (rId recipe) <> "/edit") view
                get "/recipes/:id" $
                  do i <- S.param "id"
                     mr <- liftIO $ getRecipe pg i
                     case mr of
                       Nothing -> next
                       Just recipe -> do ingredients <- liftIO $ getRecipeIngredients pg recipe
+                                        mbook <- liftIO $ maybe (return Nothing) (getBookById pg) (rBookId recipe)
                                         blaze $ do p $ a ! href "/recipes" $ "All Recipes"
-                                                   p (H.text (rName recipe))
+                                                   p $ do H.text (rName recipe)
+                                                          H.text " "
+                                                          a ! href (H.textValue ("/recipes/" <> tshow (rId recipe) <> "/edit")) $ "Edit"
                                                    formatIngredients (M.empty :: M.Map Int [Text]) ingredients
+                                                   mapM_ (\l -> p $ H.text l) $ T.lines (rInstructions recipe)
+                                                   case mbook of
+                                                     Nothing -> return ()
+                                                     Just book -> p $ H.text $ maybe "" (("pg" <>) . tshow) (rPageNumber recipe) <> " from " <> bTitle book
+
                get "/:short" $
                  do short <- S.param "short"
                     mu <- liftIO $ getShortUrl pg short
@@ -220,7 +241,7 @@ main = do port <- envDefRead "PORT" 3000
                mapM_ (\(recipe, mbook) ->
                         p $ do H.text (rName recipe)
                                H.text $ "; serves " <> tshow (rNumberServings recipe)
-                               H.text $ "; " <> tshow (floor $ 1/60 * (realToFrac $ rTotalTime recipe)) <> "mins"
+                               H.text $ "; " <> formatTime (rTotalTime recipe)
                                maybe (return ()) (\b -> H.text ("; " <> bShort b <> ", p" <> tshow (fromJust (rPageNumber recipe)))) mbook)
                      (reverse $ sortBy (comparing (rComplexity.fst)) dishes)
         foldUp [] = []
