@@ -163,7 +163,7 @@ main = do port <- envDefRead "PORT" 3000
                get "/recipes" $
                   do recipes <- liftIO (getRecipes pg)
                      blaze $ do p $ a ! href "/recipes/new" $ "New Recipe"
-                                ul $ mapM_ (\r -> li (a ! href (H.textValue $ "/recipes/" <> tshow (rId r)) $ H.text $ rName r)) recipes
+                                ul $ mapM_ (\r -> li (a ! href (H.textValue $ "/recipes/" <> tshow (rId r)) $ H.text $ hasInstructions r $ rName r)) recipes
                matchAny "/recipes/new" $
                  do books <- liftIO (getBooks pg)
                     (view, result) <- runForm "recipe" (recipeForm books Nothing)
@@ -190,30 +190,34 @@ main = do port <- envDefRead "PORT" 3000
                                                                        a ! href (H.textValue ("/recipes/" <> tshow (rId recipe))) $ "Back"
                                                                 H.style ! type_ "text/css" $ "input { width: 80%; display: inline-block; font-size: 15pt; } textarea { width: 80%; display: inline-block; font-size: 15pt } label { width: 20%; font-size: 15pt; display: inline-block; } select { font-size: 15pt } "
                                                                 recipeView ("/recipes/" <> tshow (rId recipe) <> "/edit") view
-               get "/recipes/:id" $
-                 do i <- S.param "id"
-                    mr <- liftIO $ getRecipe pg i
-                    case mr of
-                      Nothing -> next
-                      Just recipe -> do ingredients <- liftIO $ getRecipeIngredients pg recipe
-                                        mbook <- liftIO $ maybe (return Nothing) (getBookById pg) (rBookId recipe)
-                                        blaze $ do p $ a ! href "/recipes" $ "All Recipes"
-                                                   p $ do H.text (rName recipe)
-                                                          H.text " "
-                                                          a ! href (H.textValue ("/recipes/" <> tshow (rId recipe) <> "/edit")) $ "Edit"
-                                                   formatIngredients (M.empty :: M.Map Int [Text]) ingredients
-                                                   mapM_ (\l -> p $ H.text l) $ T.lines (rInstructions recipe)
-                                                   case mbook of
-                                                     Nothing -> return ()
-                                                     Just book -> p $ H.text $ maybe "" (("pg" <>) . tshow) (rPageNumber recipe) <> " from " <> bTitle book
-
+               get "/recipes/:id" $ handleRecipe pg
                get "/:short" $
                  do short <- S.param "short"
                     mu <- liftIO $ getShortUrl pg short
                     case mu of
                       Nothing -> next
                       Just u -> redirect (TL.fromStrict $ sUrl u)
-  where constructPlanUrl plans = TL.fromStrict $
+               get "/:id" $ do i <- S.param "id"
+                               redirect $ "/recipes/" <> i
+  where handleRecipe pg = do i <- S.param "id"
+                             mr <- liftIO $ getRecipe pg i
+                             case mr of
+                               Nothing -> next
+                               Just recipe -> do ingredients <- liftIO $ getRecipeIngredients pg recipe
+                                                 mbook <- liftIO $ maybe (return Nothing) (getBookById pg) (rBookId recipe)
+                                                 blaze $ do p $ a ! href "/recipes" $ "All Recipes"
+                                                            p $ do H.text (rName recipe)
+                                                                   H.text " "
+                                                                   a ! href (H.textValue ("/recipes/" <> tshow (rId recipe) <> "/edit")) $ "Edit"
+                                                            formatIngredients (M.empty :: M.Map Int [Text]) ingredients
+                                                            mapM_ (\l -> p $ H.text l) $ T.lines (rInstructions recipe)
+                                                            case mbook of
+                                                              Nothing -> return ()
+                                                              Just book -> p $ H.text $ maybe "" (("pg" <>) . tshow) (rPageNumber recipe) <> " from " <> bTitle book
+        hasInstructions r t = if T.strip (rInstructions r) == ""
+                                then t
+                                else t <> "*"
+        constructPlanUrl plans = TL.fromStrict $
           "/plan?" <> (T.intercalate "&" $ Prelude.map format $ concat . concat $ Prelude.map ((Prelude.map ununTuple) .unTuple) $
             zip [0..] (Prelude.map (zip [0..] . Prelude.map (zip [0..])) plans))
           where unTuple (a,bs) = Prelude.map (a,) bs
@@ -242,7 +246,10 @@ main = do port <- envDefRead "PORT" 3000
                         p $ do H.text (rName recipe)
                                H.text $ "; serves " <> tshow (rNumberServings recipe)
                                H.text $ "; " <> formatTime (rTotalTime recipe)
-                               maybe (return ()) (\b -> H.text ("; " <> bShort b <> ", p" <> tshow (fromJust (rPageNumber recipe)))) mbook)
+                               maybe (return ()) (\b -> H.text ("; " <> bShort b <> ", p" <> tshow (fromJust (rPageNumber recipe)))) mbook
+                               if T.strip (rInstructions recipe) == ""
+                                  then return ()
+                                  else H.text ("; " <> "mealstrat.com/" <> tshow (rId recipe)))
                      (reverse $ sortBy (comparing (rComplexity.fst)) dishes)
         foldUp [] = []
         foldUp (x:y:rest) = [x,y] : foldUp rest
