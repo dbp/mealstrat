@@ -15,6 +15,7 @@ import           Data.Ord                      (comparing)
 import           Data.Pool
 import           Data.Text                     (Text)
 import qualified Data.Text                     as T
+import qualified Data.Text.Encoding                     as T
 import qualified Data.Text.Lazy                as TL
 import           Database.PostgreSQL.Simple
 import           System.Environment
@@ -29,6 +30,7 @@ import qualified Text.Digestive.Blaze.Html5    as D
 import           Text.Digestive.Scotty
 import           Web.Scotty
 import qualified Web.Scotty                    as S
+import           Web.Heroku                         (parseDatabaseUrl)
 
 import           Lib
 
@@ -97,12 +99,15 @@ recipeView action v = D.form v action $
 
 main :: IO ()
 main = do port <- envDefRead "PORT" 3000
-          host <- envDef "PGHOST" "localhost"
-          pgport <- envDefRead "PGPORT" 5432
-          user <- envDef "PGUSER" "mealstrat_user"
-          password <- envDef "PGPASS" "111"
-          database <- envDef "PGDATABASE" "mealstrat_devel"
-          pg <- createPool (connect (ConnectInfo host pgport user password database)) close 1 5 20
+          u <- fmap parseDatabaseUrl <$> lookupEnv "DATABASE_URL"
+          let ps = fromMaybe [("host", "localhost")
+                             ,("port", "5432")
+                             ,("user", "wedding")
+                             ,("password", "111")
+                             ,("dbname", "wedding")]
+                u 
+          pg <- createPool (connectPostgreSQL $ T.encodeUtf8 $ T.intercalate " " $ Prelude.map (\(k,v) -> k <> "=" <> v) ps)
+                        close 1 60 20
           hostname <- envDef "HOSTNAME" "localhost:3000"
           scotty port $
             do get "/static/main.css" $ S.file "static/main.css"

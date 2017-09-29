@@ -1,1 +1,1 @@
-web: /srv/mealstrat
+web: mealstrat
