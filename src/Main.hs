@@ -183,7 +183,7 @@ main = do port <- envDefRead "PORT" 3000
                matchAny "/recipes/:id/delete" $
                  do i <- S.param "id"
                     liftIO $ deleteRecipe pg i
-                    redirect "/"
+                    redirect "/recipes"
                matchAny "/recipes/:id/edit" $
                  do i <- S.param "id"
                     mr <- liftIO $ getRecipe pg i
