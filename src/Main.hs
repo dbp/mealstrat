@@ -218,6 +218,7 @@ main = do port <- envDefRead "PORT" 3000
                                                             p $ do H.text (rName recipe)
                                                                    H.text " "
                                                                    a ! href (H.textValue ("/recipes/" <> tshow (rId recipe) <> "/edit")) $ "Edit"
+                                                                   H.text " | "
                                                                    a ! onclick "return confirm('Are you sure?')" ! href (H.textValue ("/recipes/" <> tshow (rId recipe) <> "/delete")) $ "Delete"
                                                             formatIngredients (M.empty :: M.Map Int [Text]) ingredients
                                                             mapM_ (\l -> p $ H.text l) $ T.lines (rInstructions recipe)
