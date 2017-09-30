@@ -168,6 +168,11 @@ getRecipeWithComplexityLe pg comp = withResource pg (\con -> listToMaybe <$> que
 getRecipe :: Pool Connection -> Int -> IO (Maybe Recipe)
 getRecipe pg i = withResource pg (\con -> listToMaybe <$> query con "SELECT id, name, book_id, page_number, instructions, total_time, active_time, number_servings, complexity FROM recipes WHERE id = ?" (Only i))
 
+deleteRecipe :: Pool Connection -> Int -> IO ()
+deleteRecipe pg i = withResource pg (\con -> do execute con "DELETE FROM recipe_ingredients WHERE recipe_id = ?" (Only i)
+                                                execute con "DELETE FROM recipes WHERE id = ?" (Only i)
+                                                return ())
+
 getBooks :: Pool Connection -> IO [Book]
 getBooks pg = withResource pg (\con -> query_ con "SELECT id, title, short, author, year FROM books")
 

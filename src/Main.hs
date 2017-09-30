@@ -180,6 +180,10 @@ main = do port <- envDefRead "PORT" 3000
                                                        redirect "/recipes"
                       Nothing -> blaze $ do H.style ! type_ "text/css" $ "input { width: 80%; display: inline-block; font-size: 15pt; } textarea { width: 80%; display: inline-block; font-size: 15pt } label { width: 20%; font-size: 15pt; display: inline-block; } select { font-size: 15pt } "
                                             recipeView "/recipes/new" view
+               matchAny "/recipes/:id/delete" $
+                 do i <- S.param "id"
+                    liftIO $ deleteRecipe pg i
+                    redirect "/"
                matchAny "/recipes/:id/edit" $
                  do i <- S.param "id"
                     mr <- liftIO $ getRecipe pg i
@@ -214,6 +218,7 @@ main = do port <- envDefRead "PORT" 3000
                                                             p $ do H.text (rName recipe)
                                                                    H.text " "
                                                                    a ! href (H.textValue ("/recipes/" <> tshow (rId recipe) <> "/edit")) $ "Edit"
+                                                                   a ! onclick "return confirm('Are you sure?')" ! href (H.textValue ("/recipes/" <> tshow (rId recipe) <> "/delete")) $ "Delete"
                                                             formatIngredients (M.empty :: M.Map Int [Text]) ingredients
                                                             mapM_ (\l -> p $ H.text l) $ T.lines (rInstructions recipe)
                                                             case mbook of
